@@ -1,5 +1,5 @@
-name = 'new2014subtheme'
-description = 'this is a test for installing omega'
+name = '2015subtheme'
+description = 'This is the Omega subtheme for #cwcon 2015'
 core = '7.x'
 engine = 'phptemplate'
 screenshot = 'screenshot.png'
