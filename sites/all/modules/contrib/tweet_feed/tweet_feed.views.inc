@@ -72,24 +72,47 @@ function tweet_feed_views_data() {
       ),
       'screen_name' => array(
         'title' => t('Screen Name'),
-        'help' => t('Thre screen name of the tweeter.'),
+        'help' => t('The screen name of the tweeter.'),
         'field' => array(
           'handler' => 'views_handler_field',
         ),
       ),
+      'hashtags' => array(
+        'title' => t('Hashtags'),
+        'help' => t('The Hashtags associated with a tweet.'),
+        'field' => array(
+          'handler' => 'views_handler_hashtag_field',
+        ),
+        'argument' => array(
+          'handler' => 'views_handler_argument_hashtag',
+        ),
+        'filter' => array(
+          'handler' => 'views_handler_filter_hashtag_string',
+        ),
+      ),
+
     ),
   );
+}
+
+
+class views_handler_filter_hashtag_string extends views_handler_filter_string {
+
+  function op_contains($field) {
+    $this->query->add_where($this->options['group'], $field, array($this->value), 'IN');
+  }
 }
 
 /**
  * override views_handler_field::render so that it does not sanitize our URL's and other links
  */
 class views_handler_tweet_field extends views_handler_field {
+
   function render($values) {
     $tweet = $this->get_value($values);
 
     /* based on our preference, assign all links to new windows or to the same window */
-    $target = (variable_get('twitter_new_window',0) == 1) ? '_blank' : '_self';
+    $target = (variable_get('tweet_feed_new_window',0) == 1) ? '_blank' : '_self';
 
     /* look for twitter handles and make them clickable */
     /* modified so that slashes in the twitter handle are counted */
@@ -100,6 +123,66 @@ class views_handler_tweet_field extends views_handler_field {
     /* look for twitter hash tags and make them clickable */
     /* modified so that slashes in the twitter handle are counted */
     $tweet = preg_replace('/(^|\s)#(\w*+\w*)/', '\1<a target="'.$target.'" href="http://twitter.com/search?q=%23\2">#\2</a>', $tweet);
+    
+    $tweet = utf8_decode($tweet);
     return htmlspecialchars_decode($tweet);
+  }
+}
+
+/**
+ * override the string handler for handling hash tags as we need to change the query 
+ * so we can look through the string with a LIKE instead of an =
+ */
+class views_handler_argument_hashtag extends views_handler_argument_string {
+
+	function option_definition() {
+		$options = array();
+		$options['match_exact'] = array(
+			'default' => FALSE,
+			'bool' => TRUE,
+		);
+		return $options;
+	}
+
+	function options_form(&$form, &$form_state) {
+		$form['match_exact'] = array(
+			'#type' => 'checkbox',
+			'#title' => t('Exact Match Mode'),
+			'#description' => t('Match the argument exactly. Not as a potential substring'),
+			'#default_value' => $this->options['match_exact'],
+			'#fieldset' => 'more',
+		);
+	}
+
+  function query($group_by = FALSE) {  
+  	if (empty($this->options['match_exact'])) {
+  		$argument = '%' . $this->argument . '%';
+    }
+    else {
+    	$argument = ' ' . $this->argument . ' ';
+    }
+    
+    $this->value = array($argument);
+  	$this->operator = 'or';
+  
+    $this->ensure_my_table();
+    $formula = FALSE;
+
+		$field = "$this->table_alias.$this->real_field";
+ 
+    if (count($this->value) > 1) {
+      $operator = 'IN';
+      $argument = $this->value;
+    }
+    else {
+    	if (empty($this->options['match_exact'])) {
+      	$operator = 'LIKE';
+      } 
+      else {
+      	$operator = 'REGEXP';
+      }
+    }
+    
+    $this->query->add_where(0, $field, $argument, $operator);
   }
 }
