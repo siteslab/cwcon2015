@@ -1,0 +1,11 @@
+name = Volunteer Rule Switch
+core = 7.x
+package = CWCON
+version = 7.x-1.0
+project = volunteer_rule_switch
+dependencies[] = entity
+dependencies[] = php
+dependencies[] = rules
+features[features_api][] = api:1
+features[rules_config][] = rules_add_volunteer_on_update
+features[rules_config][] = rules_add_volunteer_role_new_users

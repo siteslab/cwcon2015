@@ -407,7 +407,8 @@ function plus1_build_taxonomy_term_jquery_widget($entity_id, $tag = 'plus1_taxon
 function plus1_node_view($node, $view_mode) {
   // Only show the voting widget in allowed content types.
   if ($node->nid && in_array($node->type, variable_get('plus1_node_types', array()))) {
-    if (($view_mode == 'teaser' && variable_get('plus1_node_in_teaser', 0)) || ($view_mode == 'full' && variable_get('plus1_node_in_full_view', 1))) {
+    $is_enabled = ('full' == $view_mode)? 1 : 0;
+    if (variable_get('plus1_node_in_' . $view_mode . '_view', $is_enabled)) {
       $node->content['plus1_widget'] = plus1_build_node_jquery_widget($node->nid);
     }
   }

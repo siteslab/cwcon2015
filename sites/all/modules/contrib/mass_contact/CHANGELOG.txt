@@ -1,3 +1,54 @@
+2013-08-21 Jason Flatt drupal@oadaeh.net
+  * mass_contact.admin.inc, mass_contact.page.inc:
+    * Give the admin the choice of using either check boxes or select lists when
+      displaying the category list to the message sender. Fixes
+      https://drupal.org/node/1061120.
+
+2013-08-13 Jason Flatt drupal@oadaeh.net
+  * mass_contact.module, mass_contact.admin.inc, mass_contact.page.inc:
+    * Add a mechanism for queuing the messages to be sent during Cron runs.
+    * Moved the _mass_contact_send_message() function to mass_contact.module to
+      facilitate the queuing.
+
+2013-07-02 Jason Flatt drupal@oadaeh.net
+  * README.txt:
+    * Added information about the Attachment location for when upgrading from
+      6.x, per kruser on https://drupal.org/node/1863640.
+  * mass_contact.install:
+    * Added a check and conversion of the Attachment location setting for when
+      upgrading from 6.x
+
+2013-05-06 Jason Flatt drupal@oadaeh.net
+  * mass_contact.page.inc:
+    * Fix incorrect variable usage in three places, per denisgre on
+      http://drupal.org/node/1987434.
+
+2013-04-16 Jason Flatt drupal@oadaeh.net
+  * mass_contact.module:
+    * Allow for opting in and out of all categories, per stomachfoot on
+      http://drupal.org/node/1969754.
+  * mass_contact.page.inc:
+    * Fix how the subject is sanitized, so it does not become unreadable, per
+      Shadowdare on http://drupal.org/node/1971386.
+
+2013-04-11 Jason Flatt drupal@oadaeh.net
+  * mass_contact.page.inc:
+    * Potential fixes for http://drupal.org/node/1908260:
+      Change the email addresses to have quotes around the name.
+      Defaulted the option to include names to no (0).
+
+2013-04-05 Jason Flatt drupal@oadaeh.net
+  * mass_contact.page.inc:
+    * Check for empty variables before using them. Fix for
+      http://drupal.org/node/1962410.
+
+2013-03-29 Jason Flatt drupal@oadaeh.net
+  * mass_contact.page.inc:
+    * Make use of the $format variable where it was intended to be used.
+    * Remove the now unnecessary $node_message variable.
+    * Save the message body directly into params, rather than an intermediate
+      variable.
+
 2013-02-28 Jason Flatt drupal@oadaeh.net
   * mass_contact.module:
     * Check for empty data value before iterating on it.

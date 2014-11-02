@@ -1,3 +1,7 @@
+/* @override http://siteslab.org/cwcon/2015/sites/all/themes/cwcon_2015/css/global.css?n81xas */
+
+/* @override http://siteslab.org/cwcon/2015/sites/all/themes/cwcon_2015/css/global.css?n81xas */
+
 
 
 /* This file holds styles for the mobile version of your website (mobile first). */
@@ -128,6 +132,30 @@ a:link {
 	
 	
 	}
+
+/* Syle the login box on the front page */
+
+#block-user-login div.block-inner.clearfix h2.block-title {
+	display: none;
+}
+
+#user-login-form div {
+	width: 50%;
+	margin: 0 auto;
+	 
+}
+
+input#edit-submit.form-submit {
+	margin-bottom: 10px;
+}
+
+.submit {
+font-size: 20px;
+color: #f5a01e;	
+width: 70%;
+margin: 0 auto;
+
+}
 
 /* This is for styling the Local Resources menu using Superfish module coffee option */
 .sf-menu.sf-style-coffee a {
@@ -1139,3 +1167,4 @@ top: 90%;
 	color: #ffffff;
 	margin: 5px;
 }
+

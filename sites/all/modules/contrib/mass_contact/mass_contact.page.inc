@@ -129,8 +129,9 @@ function mass_contact_mail_page($form, $form_state) {
     // Add the field for specifying the category(ies).
     if ((count($categories) > 1) || !isset($default_category)) {
       // Display a choice when one is needed.
+      $field_type = variable_get('mass_contact_category_display', 'select');
       $form['cid'] = array(
-        '#type' => 'select',
+        '#type' => $field_type,
         '#title' => t('Category'),
         '#default_value' => $default_category,
         '#options' => $categories,
@@ -223,7 +224,7 @@ function mass_contact_mail_page($form, $form_state) {
         $form['body']['message'] = array(
           '#type' => 'text_format',
           '#title' => t('Message'),
-          '#format' => !empty($default_filter_format->format) ? $default_filter_format->format : NULL,
+          '#format' => !empty($default_filter_format) ? $default_filter_format : NULL,
           '#rows' => 12,
           '#required' => TRUE,
         );
@@ -246,7 +247,7 @@ function mass_contact_mail_page($form, $form_state) {
         // Display text format information to the user.
         $form['body_filter_format_info'] = array(
           '#type' => 'item',
-          '#description' => '<p>' . (variable_get('mass_contact_html_d', 1) ? t('The message will be sent using the %filter text format. More information about what is available is on the <a href="@formats_descriptions">Compose tips</a> page.', array('%filter' => $default_filter_format->name, '@formats_descriptions' => url('filter/tips'))) : t('The message will be sent as plain text.')) . '</p>',
+          '#description' => '<p>' . (variable_get('mass_contact_html_d', 1) ? t('The message will be sent using the %filter text format. More information about what is available is on the <a href="@formats_descriptions">Compose tips</a> page.', array('%filter' => $default_filter_format, '@formats_descriptions' => url('filter/tips'))) : t('The message will be sent as plain text.')) . '</p>',
         );
       }
 
@@ -411,8 +412,8 @@ function mass_contact_mail_page_submit($form, &$form_state) {
   // Set the input filter format.
   $format = _mass_contact_compute_default_filter_format();
   if (user_access('mass contact override text format')) {
-    // Allow the form data to determine the message format if our user
-    // has the appropriate permissions.
+    // Allow the form data to determine the message format, if the user has the
+    // appropriate permissions.
     if (is_array($form_state['values']['message'])) {
       $format = $form_state['values']['message']['format'];
     }
@@ -422,7 +423,7 @@ function mass_contact_mail_page_submit($form, &$form_state) {
   }
 
   // Process some parts of the message header (more will be processed later).
-  $params = _mass_contact_prepare_header($form_state['values']);
+  $params = _mass_contact_prepare_header($form_state['values'], $format);
 
   // Get the admin specified default sender's name.
   $from_name = variable_get('mass_contact_default_sender_name');
@@ -443,22 +444,15 @@ function mass_contact_mail_page_submit($form, &$form_state) {
   }
 
   // Format the sender name and email address.
-  if (variable_get('mass_contact_include_from_name', 1) == 1 && !empty($from_name)) {
-    $from_address = $from_name . ' <' . $from_email . '>';
+  if (variable_get('mass_contact_include_from_name', 0) == 1 && !empty($from_name)) {
+    $from_address = '"' . $from_name . '" <' . $from_email . '>';
   }
   else {
     $from_address = $from_email;
   }
 
   // Process the message body.
-  // Prepare the message body part(s).
-  $message = _mass_contact_prepare_bodies($form_state['values']);
-
-  // For the node copy, we want to handle attachments differently, so we'll
-  // save the message as it currently stands.
-  if (variable_get('mass_contact_nodecc_d', 1) || ($nodecc == 1)) {
-    $node_message = $message;
-  }
+  $params['body'] = _mass_contact_prepare_bodies($form_state['values'], $format);
 
   // If there are attachments, and the user is allowed, add them.
   if (user_access('mass contact include attachments')) {
@@ -471,10 +465,6 @@ function mass_contact_mail_page_submit($form, &$form_state) {
       }
     }
   }
-
-  // Add the message to the main variable.
-  $params['body'] = $message;
-
 
   // Process the recipients (some more of the message header).
   // Get the IDs of the chosen categories.
@@ -503,7 +493,7 @@ function mass_contact_mail_page_submit($form, &$form_state) {
       // Set the recipients.
       'recipients' => _mass_contact_create_recipient_list($category, $form_state['values']['optout']),
       // Set the subject.
-      'subject' => t('[@category] @subject', array('@category' => $category->category, '@subject' => $form_state['values']['subject'])),
+      'subject' => t('[@category] !subject', array('@category' => $category->category, '!subject' => filter_xss($form_state['values']['subject']))),
     );
   }
 
@@ -548,19 +538,21 @@ function mass_contact_mail_page_submit($form, &$form_state) {
       }
 
       // Add the subject.
-      $new_recipient_list['All categories combined']['subject'] = t('@subject', array('@subject' => $form_state['values']['subject']));
+      $new_recipient_list['All categories combined']['subject'] = filter_xss($form_state['values']['subject'], array());
 
       // Set the original list to the new combined, unduplicated list.
       $new_recipient_list['All categories combined']['recipients'] = array_unique($new_recipient_list['All categories combined']['recipients']);
       $recipient_lists = $new_recipient_list;
     }
 
+    // Capture the rate limiting information.
+    $recipient_limit = variable_get('mass_contact_recipient_limit', 0);
+    $send_with_cron = variable_get('mass_contact_send_with_cron', 0);
+
     // Iterate through each recipient list.
     foreach ($recipient_lists as $category => $recipient_list) {
       // Only process this recipient list if it is not empty.
       if (count($recipient_list['recipients']) > 0) {
-        // If there's a recipient limit, break up recipient list.
-        $recipient_limit = variable_get('mass_contact_recipient_limit', 0);
         if (count($recipient_list['recipients']) > $recipient_limit && $recipient_limit != 0) {
           // Initialize still more variables.
           // The count of current recipients.
@@ -572,9 +564,9 @@ function mass_contact_mail_page_submit($form, &$form_state) {
           $current_recipients = array();
 
           foreach ($recipient_list['recipients'] as $recipient_name => $recipient_address) {
-            if (variable_get('mass_contact_include_to_name', 1) == 1) {
-              $current_recipients[] = $recipient_name . " <" . $recipient_address . ">";
-              $partial_list[] = $recipient_name . " <" . $recipient_address . ">";
+            if (variable_get('mass_contact_include_to_name', 0) == 1) {
+              $current_recipients[] = '"' . $recipient_name . '" <' . $recipient_address . '>';
+              $partial_list[] = '"' . $recipient_name . '" <' . $recipient_address . '>';
             }
             else {
               $current_recipients[] = $recipient_address;
@@ -591,8 +583,26 @@ function mass_contact_mail_page_submit($form, &$form_state) {
               // possibly, Bcc fields.
               $to = _mass_contact_finalize_headers($bcc, implode(', ', $partial_list), $params, $from_address, $recipient_list['subject']);
 
-              // Send the message. Save the inverse of the result for tallying.
-              $send_error += !(_mass_contact_send_message('mail_page_' . $batch, $to, $params, $from_address, '[Success] Sent batch #' . $batch . '.'));
+              if (empty($send_with_cron)) {
+                // Send the message. Save the inverse of the result for tallying.
+                $send_error += !(_mass_contact_send_message('mail_page_' . $batch, $to, $params, $from_address, '[Success] Sent batch #' . $batch . '.'));
+              }
+              else {
+                // Create the queue.
+                $queue = new SystemQueue('mass_contact');
+
+                // Create the queue item.
+                $message = array(
+                  'message_key' => 'mail_page_' . $batch,
+                  'to' => $to,
+                  'params' => $params,
+                  'from_email' => $from_address,
+                  'success_message' => '[Success] Sent batch #' . $batch . '.',
+                );
+
+                // Add the item to the queue.
+                $queue->createItem($message);
+              }
 
               // Reset the variables.
               $partial_list = array();
@@ -606,8 +616,26 @@ function mass_contact_mail_page_submit($form, &$form_state) {
             // Bcc fields.
             $to = _mass_contact_finalize_headers($bcc, implode(', ', $partial_list), $params, $from_address, $recipient_list['subject']);
 
-            // Send the message. Save the inverse of the result for tallying.
-            $send_error += !(_mass_contact_send_message('mail_page_last', $to, $params, $from_address, '[Success] Sent the remainder.'));
+            if (empty($send_with_cron)) {
+              // Send the message. Save the inverse of the result for tallying.
+              $send_error += !(_mass_contact_send_message('mail_page_last', $to, $params, $from_address, '[Success] Sent the remainder.'));
+            }
+            else {
+              // Create the queue.
+              $queue = new SystemQueue('mass_contact');
+
+              // Create the queue item.
+              $message = array(
+                'message_key' => 'mail_page_last',
+                'to' => $to,
+                'params' => $params,
+                'from_email' => $from_address,
+                'success_message' => '[Success] Sent the remainder.',
+              );
+
+              // Add the item to the queue.
+              $queue->createItem($message);
+            }
           }
 
           $total_recipients = count($current_recipients);
@@ -622,8 +650,8 @@ function mass_contact_mail_page_submit($form, &$form_state) {
           $current_recipients = array();
 
           foreach ($recipient_list['recipients'] as $recipient_name => $recipient_address) {
-            if (variable_get('mass_contact_include_to_name', 1) == 1) {
-              $current_recipients[] = $recipient_name . " <" . $recipient_address . ">";
+            if (variable_get('mass_contact_include_to_name', 0) == 1) {
+              $current_recipients[] = '"' . $recipient_name . '" <' . $recipient_address . '>';
             }
             else {
               $current_recipients[] = $recipient_address;
@@ -644,7 +672,7 @@ function mass_contact_mail_page_submit($form, &$form_state) {
 
         // Archive the message as a node.
         if ($nodecc) {
-          _mass_contact_save_node($params, $node_message, $format, $from_address, $category, $to, !$send_error);
+          _mass_contact_save_node($params, $format, $from_address, $category, $to, !$send_error);
         }
       }
     }
@@ -653,14 +681,32 @@ function mass_contact_mail_page_submit($form, &$form_state) {
     if (!$send_error) {
       // If the sender requested a copy, send it.
       if (!empty($form_state['values']['copy']) && !$bcc) {
-        if (!_mass_contact_send_message('user-copy', $from_address, $params, $from_address, 'A copy was sent to you.')) {
-          // There was an error, so inform the user.
-          if (!module_exists('help')) {
-            drupal_set_message(t("A copy could not be sent to you. Check the logs for error messages. For more information, see the Troubleshooting secion of Mass Contact's !help page or README.txt.", array('!help' => l(t('help'), 'admin/help/mass_contact'))));
+        if (empty($recipient_limit) && empty($send_with_cron)) {
+          if (!_mass_contact_send_message('user-copy', $from_address, $params, $from_address, 'A copy was sent to you.')) {
+            // There was an error, so inform the user.
+            if (!module_exists('help')) {
+              drupal_set_message(t("A copy could not be sent to you. Check the logs for error messages. For more information, see the Troubleshooting secion of Mass Contact's !help page or README.txt.", array('!help' => l(t('help'), 'admin/help/mass_contact'))));
+            }
+            else {
+              drupal_set_message(t("A copy could not be sent to you. Check the logs for error messages. For more information, see the Troubleshooting secion of Mass Contact's README.txt."));
+            }
           }
-          else {
-            drupal_set_message(t("A copy could not be sent to you. Check the logs for error messages. For more information, see the Troubleshooting secion of Mass Contact's README.txt."));
-          }
+        }
+        else {
+          // Create the queue.
+          $queue = new SystemQueue('mass_contact');
+
+          // Create the queue item.
+          $message = array(
+            'message_key' => 'user-copy',
+            'to' => $from_address,
+            'params' => $params,
+            'from_email' => $from_address,
+            'success_message' => 'A copy was sent to you.',
+          );
+
+          // Add the item to the queue.
+          $queue->createItem($message);
         }
       }
 
@@ -736,8 +782,9 @@ function _mass_contact_compute_default_filter_format() {
     $filter_formats = filter_formats($user);
     // Cycle through the list of possible text formats.
     foreach ($filter_formats as $filter_format) {
-      // If the current filter format matches the admin specified one...
-      if ($filter_format->format == $specified_filter_format['format'] || $filter_format->format == $specified_filter_format) {
+      // If the current filter format matches the admin specified one, use it.
+      if ((!empty($specified_filter_format['format']) && $filter_format->format == $specified_filter_format['format']) ||
+        (!empty($specified_filter_format) && $filter_format->format == $specified_filter_format)) {
         return $filter_format->format;
       }
     }
@@ -761,10 +808,11 @@ function _mass_contact_compute_default_filter_format() {
  * @return array
  *   The prepared header.
  */
-function _mass_contact_prepare_header($form_values) {
+function _mass_contact_prepare_header($form_values, $format) {
   $params = array();
 
-  if (!empty($form_values['message']['format']) && $form_values['message']['format'] == 'plain_text') {
+//  if (!empty($form_values['message']['format']) && $form_values['message']['format'] == 'plain_text') {
+  if (!empty($format) && $format == 'plain_text') {
     $params['headers']['Content-Type'] = 'text/plain; charset=' . variable_get('mass_contact_character_set', 'UTF-8') . '; format=flowed';
   }
   elseif (module_exists('mimemail')) {
@@ -784,14 +832,16 @@ function _mass_contact_prepare_header($form_values) {
  *
  * @param array $form_values
  *   The values returned from the message sending form.
+ * @param string $format
+ *   The input text format the message was created with.
  *
  * @return array
  *   The prepared body, including any possible addons.
  */
-function _mass_contact_prepare_bodies($form_values) {
+function _mass_contact_prepare_bodies($form_values, $format) {
   $body = array();
 
-  if (!empty($form_values['message']['format']) && $form_values['message']['format'] == 'plain_text') {
+  if (!empty($format) && $format == 'plain_text') {
     // Start with the message prefix.
     $body[] = _mass_contact_prepare_message_addon('prefix', 'plain text');
 
@@ -811,13 +861,12 @@ function _mass_contact_prepare_bodies($form_values) {
     $body[] = _mass_contact_prepare_message_addon('prefix', 'html');
 
     global $language;
-
     // Add in the actual message.
     if (is_array($form_values['message'])) {
-      $body[] = check_markup($form_values['message']['value'], $form_values['message']['format'], ($language) ? $language->language : LANGUAGE_NONE);
+      $body[] = check_markup($form_values['message']['value'], $format, ($language) ? $language->language : LANGUAGE_NONE);
     }
     else {
-      $body[] = check_markup($form_values['message'], $form_values['body_filter_format']->format, ($language) ? $language->language : LANGUAGE_NONE);
+      $body[] = check_markup($form_values['message'], $format, ($language) ? $language->language : LANGUAGE_NONE);
     }
 
     // End with the message suffix.
@@ -1151,39 +1200,6 @@ function _mass_contact_finalize_headers($bcc, $recipients, &$params, $from_email
 
 
 /**
- * Sends the message.
- *
- * @param string $message_key
- *   A key to identify the email sent.
- * @param string $to
- *   To whom the message will be delivered.
- * @param array $params
- *   The message array.
- * @param string $from_email
- *   The message sender's email address.
- * @param string $success_message
- *   The message that will be displayed to the user, if sending is successful.
- *
- * @return boolean
- *   The result of the call to drupal_mail():
- *     The $message array structure containing all details of the message. If
- *     already sent ($send = TRUE), then the 'result' element will contain the
- *     success indicator of the email, failure being already written to the
- *     watchdog. (Success means nothing more than the message being accepted at
- *     php-level, which still doesn't guarantee it to be delivered.)
- */
-function _mass_contact_send_message($message_key, $to, &$params, $from_email, $success_message) {
-  $success = drupal_mail('mass_contact', $message_key, $to, language_default(), $params, $from_email);
-
-  if ($success['result']) {
-    drupal_set_message(t($success_message));
-  }
-
-  return $success['result'];
-}
-
-
-/**
  * Archive a copy of the sent message as a node.
  *
  * @param array $params
@@ -1201,7 +1217,7 @@ function _mass_contact_send_message($message_key, $to, &$params, $from_email, $s
  * @param boolean $result
  *   The result of sending the message.
  */
-function _mass_contact_save_node($params, $body, $format, $from, $category, $recipients, $result) {
+function _mass_contact_save_node($params, $format, $from, $category, $recipients, $result) {
   // Create a new node object.
   $node = new stdClass();
 
@@ -1223,7 +1239,7 @@ function _mass_contact_save_node($params, $body, $format, $from, $category, $rec
   $node->title = $params['subject'];
 
   // Convert the body from an array to a string.
-  $body = implode("\n\n", $body);
+  $body = implode("\n\n", $params['body']);
   // Set the body of the node to the body of the message.
   $node->body[$node->language][0]['value'] = $body;
   // Set the teaser or summary of the body.
